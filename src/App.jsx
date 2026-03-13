@@ -217,7 +217,7 @@ const LogoUploader = ({ client, onUpload }) => {
 };
 
 // ─── Tag Selector ─────────────────────────────────────────────────────────────
-const TagSelector = ({ clientId, tags, selected, onChange }) => {
+const TagSelector = ({ clientId, tags, selected, onChange, onDeleteTag }) => {
   const [newLabel, setNewLabel] = useState(""); const [newColor, setNewColor] = useState(TAG_PALETTE[0]); const [adding, setAdding] = useState(false);
   const clientTags = tags.filter(t => t.clientId === clientId);
   const toggle = (id) => onChange(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id]);
@@ -227,7 +227,15 @@ const TagSelector = ({ clientId, tags, selected, onChange }) => {
       <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 8, letterSpacing: "0.04em", textTransform: "uppercase" }}>Etiquetas</label>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
         {clientTags.length === 0 && !adding && <span style={{ fontSize: 12, color: "#bbb" }}>Sin etiquetas para este cliente.</span>}
-        {clientTags.map(tag => { const active = selected.includes(tag.id); return <button key={tag.id} onClick={() => toggle(tag.id)} style={{ padding: "3px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${tag.color}`, background: active ? tag.color : "transparent", color: active ? "#fff" : tag.color, transition: "all 0.15s" }}>{tag.label}</button>; })}
+        {clientTags.map(tag => {
+          const active = selected.includes(tag.id);
+          return (
+            <div key={tag.id} style={{ display: "flex", alignItems: "center", gap: 0, border: `1.5px solid ${tag.color}`, borderRadius: 20, overflow: "hidden" }}>
+              <button onClick={() => toggle(tag.id)} style={{ padding: "3px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none", background: active ? tag.color : "transparent", color: active ? "#fff" : tag.color, transition: "all 0.15s" }}>{tag.label}</button>
+              {onDeleteTag && <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`¿Borrar la etiqueta "${tag.label}"?`)) onDeleteTag(tag.id); }} style={{ padding: "3px 7px 3px 4px", border: "none", background: active ? tag.color : "transparent", color: active ? "#fff" : tag.color, cursor: "pointer", fontSize: 11, opacity: 0.6, lineHeight: 1 }} title="Borrar etiqueta">×</button>}
+            </div>
+          );
+        })}
       </div>
       {adding ? (
         <div style={{ display: "flex", gap: 8, alignItems: "center", background: "#f7f7f5", borderRadius: 8, padding: "10px 12px", flexWrap: "wrap" }}>
@@ -314,7 +322,7 @@ const TaskModal = ({ task, clients, users, tags, setTags, currentUser, onSave, o
               <Input label="¿Por qué está bloqueada?" placeholder="Ej: Esperando aprobación..." value={form.blockedReason} onChange={e => setForm({ ...form, blockedReason: e.target.value })} style={{ borderColor: "#e86c4a40", background: "#fef8f7" }} />
             </div>
           )}
-          <div style={{ gridColumn: "1/-1" }}><TagSelector clientId={form.clientId} tags={tags} selected={form.tagIds} onChange={handleTagChange} /></div>
+          <div style={{ gridColumn: "1/-1" }}><TagSelector clientId={form.clientId} tags={tags} selected={form.tagIds} onChange={handleTagChange} onDeleteTag={(id) => { setTags(p => p.filter(t => t.id !== id)); setForm(f => ({ ...f, tagIds: f.tagIds.filter(x => x !== id) })); }} /></div>
           <div style={{ gridColumn: "1/-1", marginBottom: 16 }}>
             <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 6, letterSpacing: "0.04em", textTransform: "uppercase" }}>Notas o link</label>
             <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} placeholder="Comentario o link..." style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #e8e8e8", borderRadius: 8, fontSize: 14, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box", background: "#fafafa" }} />
@@ -606,7 +614,7 @@ const Dashboard = ({ tasks, setTasks, clients, users, tags, setTags, meetings, a
   const pendingTasks = tasks
     .filter(t => t.status !== "done")
     .filter(t => tagFilter === "all" || (t.tagIds || []).includes(tagFilter))
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || (a.createdAt || 0) - (b.createdAt || 0));
 
   const recentMeetings = [...meetings].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 2);
   const recentActivity = [...activity].sort((a, b) => b.timestamp - a.timestamp);
@@ -851,6 +859,10 @@ const ClientsView = ({ clients, setClients, tasks, pages, meetings, setActiveSec
                     <div style={{ fontWeight: 700, fontSize: 15 }}>{c.name}</div>
                     <div style={{ fontSize: 12, color: "#aaa" }}>{c.industry}</div>
                   </div>
+                  <button onClick={e => { e.stopPropagation(); if (window.confirm(`¿Borrar "${c.name}" y todos sus datos? Esta acción no se puede deshacer.`)) setClients(p => p.filter(x => x.id !== c.id)); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#ddd", padding: 4, flexShrink: 0 }} title="Borrar cliente">
+                    <Icon name="trash" size={14} />
+                  </button>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 11, fontWeight: 600, color: cs.color, background: cs.color + "15", padding: "2px 8px", borderRadius: 20 }}>{cs.label}</span>
@@ -1053,7 +1065,8 @@ const TasksView = ({ tasks, setTasks, clients, users, tags, setTags, currentUser
   const [showNewTask, setShowNewTask]   = useState(false);
   const filtered = tasks
     .filter(t => statusFilter === "all" ? true : statusFilter === "mine" ? t.assigneeId === currentUser.id : t.status === statusFilter)
-    .filter(t => tagFilter === "all" || (t.tagIds || []).includes(tagFilter));
+    .filter(t => tagFilter === "all" || (t.tagIds || []).includes(tagFilter))
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || (a.createdAt || 0) - (b.createdAt || 0));
   const saveTask = (form) => {
     if (editingTask) { setTasks(p => p.map(t => t.id === editingTask.id ? { ...t, ...form } : t)); addActivity(createEvent("task_status", `editó la tarea "${form.title}"`, currentUser.id)); }
     else { setTasks(p => [...p, { id: "t" + Date.now(), ...form, createdAt: Date.now() }]); addActivity(createEvent("task_created", `creó la tarea "${form.title}"`, currentUser.id)); }
