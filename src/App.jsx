@@ -1201,16 +1201,18 @@ const WorkloadView = ({ tasks, users, clients }) => {
   const dayLabels = Array.from({ length: 7 }, (_, i) => { const d = new Date(monday); d.setDate(monday.getDate() + i); return { label: d.toLocaleDateString("es-AR", { weekday: "short", day: "numeric" }), date: toYMD(d) }; });
 
   // Distribute hours across all days in [startDate, dueDate] range that fall within the week
+  const parseLocal = (str) => { const [y,m,d] = str.split("-").map(Number); return new Date(y, m-1, d); };
+
   const getHoursForDay = (task, dayDate) => {
     if (!task.hours) return 0;
     const start = task.startDate || task.dueDate;
     const end   = task.dueDate;
     if (!start || !end || dayDate < start || dayDate > end) return 0;
     // Check that this specific day is a weekday
-    const d = new Date(dayDate);
+    const d = parseLocal(dayDate);
     if (d.getDay() === 0 || d.getDay() === 6) return 0;
     // Count only weekdays in range
-    const startD = new Date(start); const endD = new Date(end);
+    const startD = parseLocal(start); const endD = parseLocal(end);
     let weekdays = 0;
     for (let cur = new Date(startD); cur <= endD; cur.setDate(cur.getDate() + 1)) {
       if (cur.getDay() !== 0 && cur.getDay() !== 6) weekdays++;
