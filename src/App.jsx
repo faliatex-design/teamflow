@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from "react";
 
 // ─── Supabase client ──────────────────────────────────────────────────────────
@@ -280,7 +281,8 @@ const SubtaskModal = ({ subtask, users, currentUser, onSave, onClose }) => {
 const TaskModal = ({ task, clients, users, tags, setTags, currentUser, onSave, onClose }) => {
   const [form, setForm] = useState({
     title: task?.title || "", clientId: task?.clientId || clients[0]?.id || "",
-    assigneeId: task?.assigneeId || currentUser.id, dueDate: task?.dueDate || "",
+    assigneeIds: task?.assigneeIds || (task?.assigneeId ? [task.assigneeId] : [currentUser.id]),
+    startDate: task?.startDate || "", dueDate: task?.dueDate || "",
     priority: task?.priority || "medium", status: task?.status || "todo",
     tagIds: task?.tagIds || [], hours: task?.hours || "", notes: task?.notes || "",
     blockedReason: task?.blockedReason || "", subtasks: task?.subtasks || [],
@@ -292,6 +294,7 @@ const TaskModal = ({ task, clients, users, tags, setTags, currentUser, onSave, o
     if (newTag) { const c = { id: "tg" + Date.now(), ...newTag }; setTags(p => [...p, c]); setForm(f => ({ ...f, tagIds: [...sel, c.id] })); }
     else setForm(f => ({ ...f, tagIds: sel }));
   };
+  const toggleAssignee = (id) => setForm(f => ({ ...f, assigneeIds: f.assigneeIds.includes(id) ? f.assigneeIds.filter(x => x !== id) : [...f.assigneeIds, id] }));
   const saveSubtask = (sf) => {
     if (editingSubtask) {
       setForm(f => ({ ...f, subtasks: f.subtasks.map(s => s.id === editingSubtask.id ? { ...s, ...sf } : s) }));
@@ -301,8 +304,11 @@ const TaskModal = ({ task, clients, users, tags, setTags, currentUser, onSave, o
     setEditingSubtask(null); setShowSubtaskModal(false);
   };
   const isLink = s => s && (s.startsWith("http://") || s.startsWith("https://"));
-  const valid  = form.title.trim() && form.dueDate && form.clientId;
+  const valid  = form.title.trim() && form.dueDate && form.clientId && form.assigneeIds.length > 0;
   const doneSubtasks = form.subtasks.filter(s => s.status === "done").length;
+
+  // Calculate distributed hours per person per day
+  const hoursPerPerson = form.hours && form.assigneeIds.length > 0 ? (parseFloat(form.hours) / form.assigneeIds.length).toFixed(1) : null;
 
   return (
     <>
@@ -310,9 +316,28 @@ const TaskModal = ({ task, clients, users, tags, setTags, currentUser, onSave, o
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
           <div style={{ gridColumn: "1/-1" }}><Input label="Título" placeholder="Describe la tarea..." value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
           <Select label="Cliente" value={form.clientId} onChange={e => setForm({ ...form, clientId: e.target.value, tagIds: [] })}>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</Select>
-          <Select label="Asignar a" value={form.assigneeId} onChange={e => setForm({ ...form, assigneeId: e.target.value })}>{users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</Select>
+
+          {/* Multiple assignees */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 8, letterSpacing: "0.04em", textTransform: "uppercase" }}>Asignar a</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {users.map(u => { const active = form.assigneeIds.includes(u.id); return (
+                <button key={u.id} onClick={() => toggleAssignee(u.id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 20, border: `1.5px solid ${active ? u.color : "#e8e8e8"}`, background: active ? u.color + "15" : "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: active ? 700 : 500, color: active ? u.color : "#888", transition: "all 0.15s" }}>
+                  <Avatar user={u} size={18} />{u.name}
+                </button>
+              ); })}
+            </div>
+            {form.assigneeIds.length === 0 && <p style={{ margin: "6px 0 0", fontSize: 11, color: "#e86c4a" }}>Seleccioná al menos una persona</p>}
+          </div>
+
+          <Input label="Fecha de inicio" type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} />
           <Input label="Fecha límite" type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} />
-          <Input label="Horas estimadas" type="number" min="0.5" max="200" step="0.5" placeholder="ej: 4" value={form.hours} onChange={e => setForm({ ...form, hours: e.target.value ? parseFloat(e.target.value) : "" })} />
+
+          <div style={{ marginBottom: 16 }}>
+            <Input label="Horas estimadas (total)" type="number" min="0.5" max="200" step="0.5" placeholder="ej: 8" value={form.hours} onChange={e => setForm({ ...form, hours: e.target.value ? parseFloat(e.target.value) : "" })} />
+            {hoursPerPerson && form.assigneeIds.length > 1 && <p style={{ margin: "-8px 0 0", fontSize: 11, color: "#aaa" }}>~{hoursPerPerson}h por persona</p>}
+          </div>
+
           <Select label="Prioridad" value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}><option value="high">Alta</option><option value="medium">Media</option><option value="low">Baja</option></Select>
           <Select label="Estado" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
             <option value="todo">Por hacer</option><option value="doing">En progreso</option><option value="blocked">Bloqueada</option><option value="done">Completado</option>
@@ -373,7 +398,8 @@ const TaskModal = ({ task, clients, users, tags, setTags, currentUser, onSave, o
 // ─── Task Row ─────────────────────────────────────────────────────────────────
 const TaskRow = ({ task, clients, users, tags, onEdit, onDelete, onStatusChange, showClient = true }) => {
   const client   = clients.find(c => c.id === task.clientId);
-  const assignee = users.find(u => u.id === task.assigneeId);
+  const assignees = ((task.assigneeIds || (task.assigneeId ? [task.assigneeId] : [])))
+    .map(id => users.find(u => u.id === id)).filter(Boolean);
   const p        = priorityMap[task.priority];
   const s        = statusMap[task.status] || statusMap.todo;
   const today    = new Date().toISOString().split("T")[0];
@@ -404,7 +430,7 @@ const TaskRow = ({ task, clients, users, tags, onEdit, onDelete, onStatusChange,
           </div>
         </div>
         <Badge label={s.label} color={s.color} />
-        {assignee && <Avatar user={assignee} size={26} />}
+        <div style={{ display: "flex", gap: 2 }}>{assignees.map(u => <Avatar key={u.id} user={u} size={26} />)}</div>
         <select value={task.status} onChange={e => onStatusChange(task.id, e.target.value)}
           style={{ fontSize: 12, border: "1.5px solid #efefef", borderRadius: 6, padding: "4px 8px", background: "#fafafa", cursor: "pointer", fontFamily: "inherit" }}>
           <option value="todo">Por hacer</option><option value="doing">En progreso</option><option value="blocked">Bloqueada</option><option value="done">Completado</option>
@@ -447,12 +473,12 @@ const ActivityFeed = ({ events, users, clients, tasks, limit }) => {
 };
 
 // ─── Meeting Card ─────────────────────────────────────────────────────────────
-const MeetingCard = ({ meeting, clients, users, onEdit, onDelete, onConvertAction, compact }) => {
+const MeetingCard = ({ meeting, clients, users, onEdit, onDelete, onConvertAction, onToggleAction, compact }) => {
   const client = clients.find(c => c.id === meeting.clientId);
   const parts  = (meeting.participants || []).map(id => users.find(u => u.id === id)).filter(Boolean);
   const [expanded, setExpanded] = useState(false);
   const [convertingIdx, setConvertingIdx] = useState(null);
-  const actionItems = (meeting.actionItems || []).map(ai => typeof ai === "string" ? { text: ai, converted: false } : ai);
+  const actionItems = (meeting.actionItems || []).map(ai => typeof ai === "string" ? { text: ai, converted: false, checked: false } : { checked: false, ...ai });
 
   return (
     <div style={{ background: "#fff", borderRadius: 12, border: "1.5px solid #efefef", overflow: "hidden" }}>
@@ -480,23 +506,28 @@ const MeetingCard = ({ meeting, clients, users, onEdit, onDelete, onConvertActio
         {!compact && actionItems.length > 0 && (
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Action items</div>
-            {actionItems.map((item, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, padding: "6px 10px", background: item.converted ? "#f5fdf7" : "#fafafa", borderRadius: 8, border: "1px solid", borderColor: item.converted ? "#3db88a30" : "#f0f0f0" }}>
-                <div style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${item.converted ? "#3db88a" : "#ddd"}`, background: item.converted ? "#3db88a" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10 }}>{item.converted ? "✓" : ""}</div>
-                <span style={{ flex: 1, fontSize: 13, color: item.converted ? "#aaa" : "#555", textDecoration: item.converted ? "line-through" : "none" }}>{item.text}</span>
-                {!item.converted && convertingIdx !== i && (
-                  <button onClick={() => setConvertingIdx(i)} title="Convertir en tarea" style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "1.5px solid #5b6af030", borderRadius: 6, padding: "3px 8px", fontSize: 11, color: "#5b6af0", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
-                    <Icon name="convert" size={11} /> Crear tarea
+            {actionItems.map((item, i) => {
+              const done = item.checked || item.converted;
+              return (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, padding: "6px 10px", background: done ? "#f5fdf7" : "#fafafa", borderRadius: 8, border: "1px solid", borderColor: done ? "#3db88a30" : "#f0f0f0" }}>
+                  <button onClick={() => onToggleAction && onToggleAction(meeting.id, i)} style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${done ? "#3db88a" : "#ccc"}`, background: done ? "#3db88a" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, cursor: "pointer", padding: 0 }}>
+                    {done ? "✓" : ""}
                   </button>
-                )}
-                {convertingIdx === i && (
-                  <ConvertActionModal item={item.text} clients={clients} users={users} meeting={meeting}
-                    onSave={(taskData) => { onConvertAction(meeting.id, i, taskData); setConvertingIdx(null); }}
-                    onClose={() => setConvertingIdx(null)} />
-                )}
-                {item.converted && <span style={{ fontSize: 11, color: "#3db88a", fontWeight: 600 }}>✓ Creada</span>}
-              </div>
-            ))}
+                  <span style={{ flex: 1, fontSize: 13, color: done ? "#aaa" : "#555", textDecoration: done ? "line-through" : "none" }}>{item.text}</span>
+                  {!done && convertingIdx !== i && (
+                    <button onClick={() => setConvertingIdx(i)} title="Convertir en tarea" style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "1.5px solid #5b6af030", borderRadius: 6, padding: "3px 8px", fontSize: 11, color: "#5b6af0", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+                      <Icon name="convert" size={11} /> Crear tarea
+                    </button>
+                  )}
+                  {convertingIdx === i && (
+                    <ConvertActionModal item={item.text} clients={clients} users={users} meeting={meeting}
+                      onSave={(taskData) => { onConvertAction(meeting.id, i, taskData); setConvertingIdx(null); }}
+                      onClose={() => setConvertingIdx(null)} />
+                  )}
+                  {item.converted && !item.checked && <span style={{ fontSize: 11, color: "#3db88a", fontWeight: 600 }}>✓ Creada</span>}
+                </div>
+              );
+            })}
           </div>
         )}
         {!compact && (meeting.body?.length > 100 || actionItems.length > 2) && (
@@ -935,6 +966,15 @@ const ClientDetail = ({ client, clients, setClients, tasks, setTasks, pages, set
     setTasks(p => [...p, newTask]);
     addActivity(createEvent("action_converted", `convirtió un action item en tarea: "${taskData.title}"`, currentUser.id));
   };
+  const toggleAction = (meetingId, itemIdx) => {
+    setMeetings(p => p.map(m => m.id === meetingId ? {
+      ...m, actionItems: m.actionItems.map((ai, i) => {
+        if (i !== itemIdx) return ai;
+        const item = typeof ai === "string" ? { text: ai, converted: false, checked: false } : { checked: false, ...ai };
+        return { ...item, checked: !item.checked };
+      })
+    } : m));
+  };
   const savePage = () => {
     if (!pageForm.title.trim()) return;
     if (editingPage) setPages(pages.map(p => p.id === editingPage.id ? { ...p, ...pageForm } : p));
@@ -1004,7 +1044,8 @@ const ClientDetail = ({ client, clients, setClients, tasks, setTasks, pages, set
             {cMeetings.map(m => <MeetingCard key={m.id} meeting={m} clients={[liveClient]} users={users}
               onEdit={m => { setEditingMeeting(m); setShowMeetingModal(true); }}
               onDelete={id => setMeetings(meetings.filter(m => m.id !== id))}
-              onConvertAction={convertAction} />)}
+              onConvertAction={convertAction}
+              onToggleAction={toggleAction} />)}
           </div>
         </div>
       )}
@@ -1119,6 +1160,15 @@ const MeetingsView = ({ meetings, setMeetings, clients, users, tasks, setTasks, 
     setTasks(p => [...p, { id: "t" + Date.now(), ...taskData, tagIds: [], hours: "", notes: "", blockedReason: "", subtasks: [], status: "todo", createdAt: Date.now() }]);
     addActivity(createEvent("action_converted", `convirtió un action item en tarea: "${taskData.title}"`, currentUser.id));
   };
+  const toggleAction = (meetingId, itemIdx) => {
+    setMeetings(p => p.map(m => m.id === meetingId ? {
+      ...m, actionItems: m.actionItems.map((ai, i) => {
+        if (i !== itemIdx) return ai;
+        const item = typeof ai === "string" ? { text: ai, converted: false, checked: false } : { checked: false, ...ai };
+        return { ...item, checked: !item.checked };
+      })
+    } : m));
+  };
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
@@ -1134,7 +1184,8 @@ const MeetingsView = ({ meetings, setMeetings, clients, users, tasks, setTasks, 
         {sorted.map(m => <MeetingCard key={m.id} meeting={m} clients={clients} users={users}
           onEdit={m => { setEditingMeeting(m); setShowModal(true); }}
           onDelete={id => setMeetings(p => p.filter(m => m.id !== id))}
-          onConvertAction={convertAction} />)}
+          onConvertAction={convertAction}
+          onToggleAction={toggleAction} />)}
       </div>
       {(showModal || editingMeeting) && <MeetingModal meeting={editingMeeting} clients={clients} users={users} currentUser={currentUser} onSave={saveMeeting} onClose={() => { setEditingMeeting(null); setShowModal(false); }} />}
     </div>
@@ -1143,45 +1194,95 @@ const MeetingsView = ({ meetings, setMeetings, clients, users, tasks, setTasks, 
 
 // ─── Workload View ────────────────────────────────────────────────────────────
 const WorkloadView = ({ tasks, users, clients }) => {
-  const [weekOffset, setWeekOffset] = useState(0);
+  const [weekOffset, setWeekOffset]       = useState(0);
+  const [showCompleted, setShowCompleted] = useState(false);
   const { monday, sunday } = getWeekBounds(weekOffset);
   const mStr = toYMD(monday); const sStr = toYMD(sunday);
   const fmt = (d) => d.toLocaleDateString("es-AR", { day: "numeric", month: "short" });
   const dayLabels = Array.from({ length: 7 }, (_, i) => { const d = new Date(monday); d.setDate(monday.getDate() + i); return { label: d.toLocaleDateString("es-AR", { weekday: "short", day: "numeric" }), date: toYMD(d) }; });
-  const weekTasks = tasks.filter(t => t.dueDate >= mStr && t.dueDate <= sStr && t.status !== "done");
-  const lc = (h) => h === 0 ? "#f0f0f0" : h <= 24 ? "#3db88a" : h <= 35 ? "#f0a030" : "#e86c4a";
+
+  // Distribute hours across all days in [startDate, dueDate] range that fall within the week
+  const getHoursForDay = (task, dayDate) => {
+    if (!task.hours) return 0;
+    const start = task.startDate || task.dueDate;
+    const end   = task.dueDate;
+    if (!start || !end || dayDate < start || dayDate > end) return 0;
+    // Count total days in range
+    const startD = new Date(start); const endD = new Date(end);
+    const totalDays = Math.max(1, Math.round((endD - startD) / 86400000) + 1);
+    return parseFloat((parseFloat(task.hours) / totalDays).toFixed(1));
+  };
+
+  // Tasks that overlap this week (by date range or dueDate)
+  const isInWeek = (t) => {
+    const start = t.startDate || t.dueDate;
+    const end   = t.dueDate;
+    return start <= sStr && end >= mStr;
+  };
+
+  const activeTasks    = tasks.filter(t => isInWeek(t) && t.status !== "done");
+  const completedTasks = tasks.filter(t => isInWeek(t) && t.status === "done");
+  const weekTasks      = showCompleted ? [...activeTasks, ...completedTasks] : activeTasks;
+
+  const lc = (h, done) => done ? "#bbb" : h === 0 ? "#f0f0f0" : h <= 24 ? "#3db88a" : h <= 35 ? "#f0a030" : "#e86c4a";
+
+  const getUserIds = (t) => t.assigneeIds || (t.assigneeId ? [t.assigneeId] : []);
+
   const userStats = users.map(u => {
-    const uT = weekTasks.filter(t => t.assigneeId === u.id);
-    const tot = uT.reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
-    const byDay = dayLabels.map(dl => ({ ...dl, hours: weekTasks.filter(t => t.assigneeId === u.id && t.dueDate === dl.date).reduce((s, t) => s + (parseFloat(t.hours) || 0), 0) }));
-    return { user: u, tasks: uT, totalHours: tot, avgPerDay: tot / 5, byDay };
+    const uActive    = activeTasks.filter(t => getUserIds(t).includes(u.id));
+    const uCompleted = completedTasks.filter(t => getUserIds(t).includes(u.id));
+    const uAll       = weekTasks.filter(t => getUserIds(t).includes(u.id));
+    const tot        = uActive.reduce((s, t) => s + (parseFloat(t.hours) || 0) / Math.max(1, getUserIds(t).length), 0);
+    const totAll     = uAll.reduce((s, t) => s + (parseFloat(t.hours) || 0) / Math.max(1, getUserIds(t).length), 0);
+    const byDay      = dayLabels.map(dl => {
+      const dayActive    = uActive.filter(t => getHoursForDay(t, dl.date) > 0);
+      const dayCompleted = showCompleted ? uCompleted.filter(t => getHoursForDay(t, dl.date) > 0) : [];
+      const activeH      = dayActive.reduce((s, t) => s + getHoursForDay(t, dl.date) / Math.max(1, getUserIds(t).length), 0);
+      const completedH   = dayCompleted.reduce((s, t) => s + getHoursForDay(t, dl.date) / Math.max(1, getUserIds(t).length), 0);
+      return { ...dl, activeH: parseFloat(activeH.toFixed(1)), completedH: parseFloat(completedH.toFixed(1)), hours: parseFloat((activeH + completedH).toFixed(1)), tasks: [...dayActive, ...dayCompleted] };
+    });
+    return { user: u, tasks: uActive, completedTasks: uCompleted, totalHours: parseFloat(tot.toFixed(1)), totalAllHours: parseFloat(totAll.toFixed(1)), byDay };
   });
+
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
         <div><h2 style={{ margin: "0 0 4px", fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em" }}>Carga del equipo</h2><p style={{ margin: 0, color: "#888", fontSize: 14 }}>Horas estimadas por semana</p></div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={() => setWeekOffset(w => w - 1)} style={{ background: "#fff", border: "1.5px solid #efefef", borderRadius: 8, padding: "7px 10px", cursor: "pointer", display: "flex" }}><Icon name="chevL" size={16} /></button>
-          <span style={{ fontSize: 13, fontWeight: 600, minWidth: 140, textAlign: "center" }}>{fmt(monday)} – {fmt(sunday)}</span>
-          <button onClick={() => setWeekOffset(w => w + 1)} style={{ background: "#fff", border: "1.5px solid #efefef", borderRadius: 8, padding: "7px 10px", cursor: "pointer", display: "flex" }}><Icon name="chevR" size={16} /></button>
-          {weekOffset !== 0 && <button onClick={() => setWeekOffset(0)} style={{ background: "none", border: "none", fontSize: 12, color: "#5b6af0", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Hoy</button>}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <button onClick={() => setShowCompleted(s => !s)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: "1.5px solid", borderColor: showCompleted ? "#3db88a" : "#e8e8e8", background: showCompleted ? "#3db88a15" : "#fff", color: showCompleted ? "#3db88a" : "#888", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+            ✓ {showCompleted ? "Ocultando completadas" : "Mostrar completadas"}
+          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={() => setWeekOffset(w => w - 1)} style={{ background: "#fff", border: "1.5px solid #efefef", borderRadius: 8, padding: "7px 10px", cursor: "pointer", display: "flex" }}><Icon name="chevL" size={16} /></button>
+            <span style={{ fontSize: 13, fontWeight: 600, minWidth: 140, textAlign: "center" }}>{fmt(monday)} – {fmt(sunday)}</span>
+            <button onClick={() => setWeekOffset(w => w + 1)} style={{ background: "#fff", border: "1.5px solid #efefef", borderRadius: 8, padding: "7px 10px", cursor: "pointer", display: "flex" }}><Icon name="chevR" size={16} /></button>
+            {weekOffset !== 0 && <button onClick={() => setWeekOffset(0)} style={{ background: "none", border: "none", fontSize: 12, color: "#5b6af0", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Hoy</button>}
+          </div>
         </div>
       </div>
+
       <div className="tf-workload-cards">
-        {userStats.map(({ user, totalHours, avgPerDay, tasks: uT }) => {
-          const col = lc(totalHours); const pct = Math.min((totalHours / 40) * 100, 100);
+        {userStats.map(({ user, tasks: uT, completedTasks: uC, totalHours, totalAllHours }) => {
+          const col = lc(totalHours, false); const pct = Math.min((totalHours / 40) * 100, 100);
           return (
             <div key={user.id} style={{ background: "#fff", borderRadius: 14, padding: "18px 20px", border: "1.5px solid #efefef" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}><Avatar user={user} size={32} /><div><div style={{ fontSize: 13, fontWeight: 700 }}>{user.name}</div><div style={{ fontSize: 11, color: "#aaa" }}>{uT.length} tareas</div></div></div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}><span style={{ color: "#888" }}>Total semana</span><span style={{ fontWeight: 700, color: col }}>{totalHours}h</span></div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}><Avatar user={user} size={32} /><div><div style={{ fontSize: 13, fontWeight: 700 }}>{user.name}</div><div style={{ fontSize: 11, color: "#aaa" }}>{uT.length} activas{showCompleted && uC.length > 0 ? ` · ${uC.length} completadas` : ""}</div></div></div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
+                <span style={{ color: "#888" }}>Carga activa</span>
+                <span style={{ fontWeight: 700, color: col }}>{totalHours}h{showCompleted && uC.length > 0 ? <span style={{ color: "#bbb", fontWeight: 400 }}> +{(totalAllHours - totalHours).toFixed(1)}h ✓</span> : ""}</span>
+              </div>
               <div style={{ height: 6, background: "#f0f0f0", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}><div style={{ height: "100%", width: `${pct}%`, background: col, borderRadius: 4, transition: "width 0.5s" }} /></div>
-              <div style={{ fontSize: 11, color: "#aaa" }}>~{avgPerDay.toFixed(1)}h/día</div>
+              <div style={{ fontSize: 11, color: "#aaa" }}>~{(totalHours / 5).toFixed(1)}h/día estimado</div>
             </div>
           );
         })}
       </div>
+
       <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #efefef", overflow: "hidden" }}>
-        <div style={{ padding: "18px 22px 14px", borderBottom: "1.5px solid #f5f5f5" }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Distribución diaria</h3></div>
+        <div style={{ padding: "18px 22px 14px", borderBottom: "1.5px solid #f5f5f5" }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Distribución diaria</h3>
+          <p style={{ margin: "3px 0 0", fontSize: 12, color: "#aaa" }}>Las horas se distribuyen entre la fecha de inicio y el deadline de cada tarea</p>
+        </div>
         <div className="tf-workload-heatmap" style={{ padding: "10px 22px 0", borderBottom: "1px solid #f5f5f5" }}>
           <div />
           {dayLabels.map(dl => <div key={dl.date} style={{ textAlign: "center", fontSize: 11, fontWeight: 600, color: dl.date === toYMD(new Date()) ? "#5b6af0" : "#aaa", paddingBottom: 8, borderBottom: dl.date === toYMD(new Date()) ? "2px solid #5b6af0" : "2px solid transparent" }}>{dl.label}</div>)}
@@ -1189,18 +1290,28 @@ const WorkloadView = ({ tasks, users, clients }) => {
         {userStats.map(({ user, byDay }) => (
           <div key={user.id} className="tf-workload-heatmap" style={{ padding: "10px 22px", borderBottom: "1px solid #f8f8f8", alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Avatar user={user} size={26} /><span style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</span></div>
-            {byDay.map(dl => { const col = lc(dl.hours); const dt = weekTasks.filter(t => t.assigneeId === user.id && t.dueDate === dl.date); return (
-              <div key={dl.date} style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "4px 2px" }}>
-                {dl.hours > 0
-                  ? <div title={dt.map(t => `${t.title} (${t.hours||0}h)`).join("\n")} style={{ width: 36, height: 36, borderRadius: 8, background: col+"25", border: `1.5px solid ${col}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: col }}>{dl.hours}h</div>
-                  : <div style={{ width: 36, height: 36, borderRadius: 8, background: "#f8f8f8", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 10, color: "#ddd" }}>—</span></div>}
-              </div>
-            ); })}
+            {byDay.map(dl => {
+              const col = lc(dl.activeH, false);
+              const hasActive = dl.activeH > 0;
+              const hasDone   = dl.completedH > 0;
+              return (
+                <div key={dl.date} style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "4px 2px" }}>
+                  {dl.hours > 0
+                    ? <div title={dl.tasks.map(t => `${t.title} (${getHoursForDay(t, dl.date)}h)`).join("\n")}
+                        style={{ width: 36, height: 36, borderRadius: 8, background: hasActive ? col + "25" : "#f5f5f5", border: `1.5px solid ${hasActive ? col : "#e0e0e0"}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: hasActive ? col : "#bbb", lineHeight: 1.1 }}>
+                        {hasActive && <span>{dl.activeH}h</span>}
+                        {hasDone && <span style={{ fontSize: 9, color: "#bbb", fontWeight: 400 }}>+{dl.completedH}✓</span>}
+                      </div>
+                    : <div style={{ width: 36, height: 36, borderRadius: 8, background: "#f8f8f8", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 10, color: "#ddd" }}>—</span></div>}
+                </div>
+              );
+            })}
           </div>
         ))}
-        <div style={{ display: "flex", gap: 16, padding: "12px 22px", borderTop: "1px solid #f5f5f5", alignItems: "center" }}>
-          <span style={{ fontSize: 11, color: "#aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Carga:</span>
+        <div style={{ display: "flex", gap: 16, padding: "12px 22px", borderTop: "1px solid #f5f5f5", alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, color: "#aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Carga activa:</span>
           {[["#3db88a","≤24h"],["#f0a030","25–35h"],["#e86c4a",">35h"]].map(([c,l]) => <div key={c} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#888" }}><div style={{ width: 12, height: 12, borderRadius: 3, background: c }} />{l}</div>)}
+          {showCompleted && <span style={{ fontSize: 11, color: "#bbb", marginLeft: 8 }}>· Las completadas aparecen en gris</span>}
         </div>
       </div>
     </div>
