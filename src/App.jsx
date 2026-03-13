@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from "react";
 
 // ─── Supabase client ──────────────────────────────────────────────────────────
@@ -1207,10 +1206,16 @@ const WorkloadView = ({ tasks, users, clients }) => {
     const start = task.startDate || task.dueDate;
     const end   = task.dueDate;
     if (!start || !end || dayDate < start || dayDate > end) return 0;
-    // Count total days in range
+    // Check that this specific day is a weekday
+    const d = new Date(dayDate);
+    if (d.getDay() === 0 || d.getDay() === 6) return 0;
+    // Count only weekdays in range
     const startD = new Date(start); const endD = new Date(end);
-    const totalDays = Math.max(1, Math.round((endD - startD) / 86400000) + 1);
-    return parseFloat((parseFloat(task.hours) / totalDays).toFixed(1));
+    let weekdays = 0;
+    for (let cur = new Date(startD); cur <= endD; cur.setDate(cur.getDate() + 1)) {
+      if (cur.getDay() !== 0 && cur.getDay() !== 6) weekdays++;
+    }
+    return parseFloat((parseFloat(task.hours) / Math.max(1, weekdays)).toFixed(1));
   };
 
   // Tasks that overlap this week (by date range or dueDate)
