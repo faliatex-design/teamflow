@@ -1,11 +1,51 @@
 import { useState, useEffect, useRef } from "react";
 
+// ─── Supabase client ──────────────────────────────────────────────────────────
+const SUPABASE_URL = "https://lopwauzxrdeqdhyhkjpk.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvcHdhdXp4cmRlcWRoeWhranBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MDU1NTQsImV4cCI6MjA4ODk4MTU1NH0.DNeskr2d-5g0wEADsQAIoh5UEYFq-_SULlN04_0viwc";
+
+const sb = async (method, table, body) => {
+  const url = `${SUPABASE_URL}/rest/v1/${table}`;
+  const headers = { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Prefer": "return=minimal" };
+  const res = await fetch(method === "GET" ? `${url}?select=*` : url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (method === "GET") return res.json();
+  return res;
+};
+
+const TABLE = { "tf-clients": "clients", "tf-tasks": "tasks", "tf-pages": "pages", "tf-tags": "tags", "tf-meetings": "meetings", "tf-activity": "activity" };
+
 const storage = {
-  async get(key, shared = true) {
-    try { const r = await window.storage.get(key, shared); return r ? JSON.parse(r.value) : null; } catch { return null; }
+  async get(key) {
+    try {
+      const rows = await sb("GET", TABLE[key]);
+      if (!rows || rows.length === 0) return null;
+      return rows.map(r => r.data);
+    } catch { return null; }
   },
-  async set(key, value, shared = true) {
-    try { await window.storage.set(key, JSON.stringify(value), shared); } catch {}
+  async set(key, value) {
+    try {
+      const table = TABLE[key];
+      const rows  = value.map(item => ({ id: item.id, data: item }));
+      // upsert all rows
+      await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Prefer": "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(rows),
+      });
+      // delete rows not in current value
+      const ids = value.map(item => item.id);
+      if (ids.length > 0) {
+        await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=not.in.(${ids.map(id => `"${id}"`).join(",")})`, {
+          method: "DELETE",
+          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
+        });
+      } else {
+        await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=neq.null`, {
+          method: "DELETE",
+          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` },
+        });
+      }
+    } catch (e) { console.error("storage.set error", e); }
   },
 };
 
@@ -22,11 +62,30 @@ const SEED = {
     { id: "u3", name: "Nico",   email: "nico@nistaestudio.com",   password: "nico123",   avatar: "NI", color: "#3db88a" },
     { id: "u4", name: "Lucho",  email: "lucho@nistaestudio.com",  password: "lucho123",  avatar: "LU", color: "#a855f7" },
   ],
-  clients:  [],
-  tags:     [],
-  tasks:    [],
-  pages:    [],
-  meetings: [],
+  clients: [
+    { id: "c1", name: "Arcadia Studio", industry: "Arquitectura", color: "#5b6af0", initials: "AS", logo: null, status: "active", since: 2023 },
+    { id: "c2", name: "Vento Digital",  industry: "Marketing",    color: "#e86c4a", initials: "VD", logo: null, status: "active", since: 2024 },
+  ],
+  tags: [
+    { id: "tg1", clientId: "c1", label: "Identidad Visual", color: "#5b6af0" },
+    { id: "tg2", clientId: "c1", label: "Presentación",     color: "#3db88a" },
+    { id: "tg3", clientId: "c2", label: "Redes Sociales",   color: "#e86c4a" },
+    { id: "tg4", clientId: "c2", label: "Estrategia",       color: "#f0a030" },
+  ],
+  tasks: [
+    { id: "t1", clientId: "c1", title: "Diseñar identidad visual",   assigneeId: "u1", dueDate: "2026-03-15", status: "doing",   priority: "high",   tagIds: ["tg1"], hours: 8, notes: "", blockedReason: "", subtasks: [], createdAt: Date.now() },
+    { id: "t2", clientId: "c1", title: "Presentación de propuestas", assigneeId: "u2", dueDate: "2026-03-20", status: "blocked", priority: "medium", tagIds: ["tg2"], hours: 4, notes: "", blockedReason: "Esperando aprobación del cliente", subtasks: [], createdAt: Date.now() },
+    { id: "t3", clientId: "c2", title: "Campaña redes sociales",     assigneeId: "u3", dueDate: "2026-03-12", status: "done",    priority: "low",    tagIds: ["tg3"], hours: 6, notes: "Ver brief: https://drive.google.com", blockedReason: "", subtasks: [], createdAt: Date.now() },
+    { id: "t4", clientId: "c2", title: "Brief creativo Q2",          assigneeId: "u4", dueDate: "2026-03-25", status: "todo",    priority: "high",   tagIds: ["tg4"], hours: 3, notes: "", blockedReason: "", subtasks: [], createdAt: Date.now() },
+  ],
+  pages: [
+    { id: "p1", clientId: "c1", title: "Brief de marca",          content: "Descripción del proyecto Arcadia...", createdAt: Date.now() },
+    { id: "p2", clientId: "c2", title: "Estrategia de contenido", content: "Plan de contenido para Vento...",     createdAt: Date.now() },
+  ],
+  meetings: [
+    { id: "m1", clientId: "c1", title: "Kick-off identidad", date: "2026-03-08", participants: ["u1","u2"], body: "Se definió la paleta de colores y tipografías.", actionItems: [{ text: "Armar moodboard", converted: false }, { text: "Enviar propuesta tipográfica", converted: false }], createdAt: Date.now() },
+    { id: "m2", clientId: "c2", title: "Revisión Q1",        date: "2026-03-07", participants: ["u3","u4"], body: "Buen engagement pero bajo en conversiones.", actionItems: [{ text: "Ajustar copy del CTA", converted: false }, { text: "Probar nuevo formato de stories", converted: false }], createdAt: Date.now() },
+  ],
   activity: [],
 };
 
@@ -1178,32 +1237,42 @@ const CalendarView = ({ tasks, clients }) => {
 // ─── App Shell ────────────────────────────────────────────────────────────────
 export default function App() {
   const [loading, setLoading]               = useState(true);
-  const [currentUser, setCurrentUser]       = useState(null);
+  const [currentUser, setCurrentUser]       = useState(() => {
+    try { const u = localStorage.getItem("tf-user"); return u ? JSON.parse(u) : null; } catch { return null; }
+  });
   const [activeSection, setActiveSection]   = useState("home");
   const [selectedClient, setSelectedClient] = useState(null);
 
   const [users]                     = useState(SEED.users);
-  const [clients,  setClients]      = useState(SEED.clients);
-  const [tasks,    setTasks]        = useState(SEED.tasks);
-  const [pages,    setPages]        = useState(SEED.pages);
-  const [tags,     setTags]         = useState(SEED.tags);
-  const [meetings, setMeetings]     = useState(SEED.meetings);
-  const [activity, setActivity]     = useState(SEED.activity);
+  const [clients,  setClients]      = useState([]);
+  const [tasks,    setTasks]        = useState([]);
+  const [pages,    setPages]        = useState([]);
+  const [tags,     setTags]         = useState([]);
+  const [meetings, setMeetings]     = useState([]);
+  const [activity, setActivity]     = useState([]);
 
   const addActivity = (event) => setActivity(prev => [event, ...prev].slice(0, 200));
 
+  // Persist session across refreshes
+  useEffect(() => {
+    if (currentUser) localStorage.setItem("tf-user", JSON.stringify(currentUser));
+    else localStorage.removeItem("tf-user");
+  }, [currentUser]);
+
+  // Initial load from Supabase
   useEffect(() => {
     (async () => {
       const [sc, st, sp, stg, sm, sa] = await Promise.all([
         storage.get("tf-clients"), storage.get("tf-tasks"), storage.get("tf-pages"),
         storage.get("tf-tags"),    storage.get("tf-meetings"), storage.get("tf-activity"),
       ]);
-      if (sc) setClients(sc); if (st) setTasks(st); if (sp) setPages(sp);
-      if (stg) setTags(stg); if (sm) setMeetings(sm); if (sa) setActivity(sa);
+      if (sc)  setClients(sc);  if (st)  setTasks(st);    if (sp)  setPages(sp);
+      if (stg) setTags(stg);    if (sm)  setMeetings(sm); if (sa)  setActivity(sa);
       setLoading(false);
     })();
   }, []);
 
+  // Polling — sync changes from other users every 5s
   const localRef = useRef({ clients, tasks, pages, tags, meetings, activity });
   useEffect(() => { localRef.current = { clients, tasks, pages, tags, meetings, activity }; }, [clients, tasks, pages, tags, meetings, activity]);
   useEffect(() => {
@@ -1223,6 +1292,7 @@ export default function App() {
     return () => clearInterval(id);
   }, [loading]);
 
+  // Save to Supabase on every change
   useEffect(() => { if (!loading) storage.set("tf-clients",  clients);  }, [clients,  loading]);
   useEffect(() => { if (!loading) storage.set("tf-tasks",    tasks);    }, [tasks,    loading]);
   useEffect(() => { if (!loading) storage.set("tf-pages",    pages);    }, [pages,    loading]);
