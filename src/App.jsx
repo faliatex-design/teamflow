@@ -1016,7 +1016,7 @@ const ClientDetail = ({ client, clients, setClients, tasks, setTasks, pages, set
             <Btn onClick={() => { setEditingTask(null); setShowNewTask(true); }}><span style={{ display: "flex", alignItems: "center", gap: 6 }}><Icon name="plus" size={14} /> Nueva tarea</span></Btn>
           </div>
           {["todo","doing","blocked","done"].map(status => {
-            const group = filtered.filter(t => t.status === status); if (!group.length) return null;
+            const group = filtered.filter(t => t.status === status).sort((a,b) => a.dueDate.localeCompare(b.dueDate)); if (!group.length) return null;
             const s = statusMap[status];
             return (
               <div key={status} style={{ marginBottom: 24 }}>
@@ -1103,15 +1103,30 @@ const TasksView = ({ tasks, setTasks, clients, users, tags, setTags, currentUser
   const [tagFilter, setTagFilter]       = useState("all");
   const [editingTask, setEditingTask]   = useState(null);
   const [showNewTask, setShowNewTask]   = useState(false);
-  const filtered = tasks
-    .filter(t => statusFilter === "all" ? true : statusFilter === "mine" ? t.assigneeId === currentUser.id : t.status === statusFilter)
-    .filter(t => tagFilter === "all" || (t.tagIds || []).includes(tagFilter))
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || (a.createdAt || 0) - (b.createdAt || 0));
+  const [showDone, setShowDone]         = useState(false);
+
+  const byDate = (a, b) => a.dueDate.localeCompare(b.dueDate) || (a.createdAt || 0) - (b.createdAt || 0);
+
+  const baseFilter = t =>
+    (statusFilter === "all" ? true : statusFilter === "mine" ? (t.assigneeIds || [t.assigneeId]).includes(currentUser.id) : t.status === statusFilter) &&
+    (tagFilter === "all" || (t.tagIds || []).includes(tagFilter));
+
+  const activeTasks = tasks.filter(t => t.status !== "done").filter(baseFilter).sort(byDate);
+  const doneTasks   = tasks.filter(t => t.status === "done").filter(baseFilter).sort(byDate);
+  const filtered    = statusFilter === "done" ? doneTasks : activeTasks;
+  const showingDone = statusFilter === "done";
+
   const saveTask = (form) => {
     if (editingTask) { setTasks(p => p.map(t => t.id === editingTask.id ? { ...t, ...form } : t)); addActivity(createEvent("task_status", `editó la tarea "${form.title}"`, currentUser.id)); }
     else { setTasks(p => [...p, { id: "t" + Date.now(), ...form, createdAt: Date.now() }]); addActivity(createEvent("task_created", `creó la tarea "${form.title}"`, currentUser.id)); }
     setEditingTask(null); setShowNewTask(false);
   };
+
+  const renderRow = t => <TaskRow key={t.id} task={t} clients={clients} users={users} tags={tags}
+    onEdit={t => { setEditingTask(t); setShowNewTask(true); }}
+    onDelete={id => { setTasks(tasks.filter(t => t.id !== id)); addActivity(createEvent("task_status", `eliminó una tarea`, currentUser.id)); }}
+    onStatusChange={(id, st) => { setTasks(tasks.map(t => t.id === id ? { ...t, status: st } : t)); addActivity(createEvent("task_status", `cambió el estado de "${tasks.find(t=>t.id===id)?.title}" a ${statusMap[st]?.label}`, currentUser.id)); }} />;
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
@@ -1130,13 +1145,37 @@ const TasksView = ({ tasks, setTasks, clients, users, tags, setTags, currentUser
           {tags.map(tag => <button key={tag.id} onClick={() => setTagFilter(tagFilter === tag.id ? "all" : tag.id)} style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, border: `1.5px solid ${tag.color}`, background: tagFilter === tag.id ? tag.color : "transparent", color: tagFilter === tag.id ? "#fff" : tag.color, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>{tag.label}</button>)}
         </div>
       )}
-      <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #efefef", overflow: "hidden" }}>
-        {filtered.length === 0 && <p style={{ padding: 24, color: "#aaa", fontSize: 14 }}>Sin tareas para este filtro.</p>}
-        {filtered.map(t => <TaskRow key={t.id} task={t} clients={clients} users={users} tags={tags}
-          onEdit={t => { setEditingTask(t); setShowNewTask(true); }}
-          onDelete={id => { setTasks(tasks.filter(t => t.id !== id)); addActivity(createEvent("task_status", `eliminó una tarea`, currentUser.id)); }}
-          onStatusChange={(id, st) => { setTasks(tasks.map(t => t.id === id ? { ...t, status: st } : t)); addActivity(createEvent("task_status", `cambió el estado de "${tasks.find(t=>t.id===id)?.title}" a ${statusMap[st]?.label}`, currentUser.id)); }} />)}
-      </div>
+
+      {/* Active tasks */}
+      {!showingDone && (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #efefef", overflow: "hidden", marginBottom: doneTasks.length > 0 ? 12 : 0 }}>
+          {filtered.length === 0 && <p style={{ padding: 24, color: "#aaa", fontSize: 14 }}>Sin tareas activas para este filtro.</p>}
+          {filtered.map(renderRow)}
+        </div>
+      )}
+
+      {/* Done tasks — collapsed by default */}
+      {!showingDone && doneTasks.length > 0 && (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #efefef", overflow: "hidden" }}>
+          <button onClick={() => setShowDone(s => !s)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#aaa" }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#3db88a" }} />
+              Completadas <span style={{ fontWeight: 400 }}>({doneTasks.length})</span>
+            </span>
+            <span style={{ fontSize: 11, color: "#bbb" }}>{showDone ? "▲ ocultar" : "▼ mostrar"}</span>
+          </button>
+          {showDone && doneTasks.map(renderRow)}
+        </div>
+      )}
+
+      {/* Filter = done: show all done */}
+      {showingDone && (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #efefef", overflow: "hidden" }}>
+          {doneTasks.length === 0 && <p style={{ padding: 24, color: "#aaa", fontSize: 14 }}>Sin tareas completadas.</p>}
+          {doneTasks.map(renderRow)}
+        </div>
+      )}
+
       {(showNewTask || editingTask) && <TaskModal task={editingTask} clients={clients} users={users} tags={tags} setTags={setTags} currentUser={currentUser} onSave={saveTask} onClose={() => { setEditingTask(null); setShowNewTask(false); }} />}
     </div>
   );
