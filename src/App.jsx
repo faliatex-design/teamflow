@@ -134,6 +134,7 @@ const Icon = ({ name, size = 16 }) => {
     subtask:  "M9 17H5a2 2 0 0 0-2 2v0a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v0a2 2 0 0 0-2-2h-4 M12 3v10 M8 9l4 4 4-4",
     convert:  "M5 12h14 M12 5l7 7-7 7",
     tag:      "M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z M7 7h.01",
+    eye:      "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6z",
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -940,6 +941,17 @@ const ClientDetail = ({ client, clients, setClients, tasks, setTasks, pages, set
   const [pageForm, setPageForm]       = useState(emptyPageForm());
   const [tagFilter, setTagFilter]     = useState("all");
   const [clientForm, setClientForm]   = useState(null);
+  const [previewPage, setPreviewPage] = useState(null);
+
+  // Render text with clickable links
+  const renderWithLinks = (text, style = {}) => {
+    if (!text) return null;
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+    return <span style={style}>{parts.map((part, i) => urlRegex.test(part)
+      ? <a key={i} href={part} target="_blank" rel="noreferrer" style={{ color: "#5b6af0", textDecoration: "underline", wordBreak: "break-all" }}>{part}</a>
+      : part)}</span>;
+  };
 
   const liveClient = clients.find(c => c.id === client.id) || client;
   const cTasks    = tasks.filter(t => t.clientId === client.id);
@@ -1074,6 +1086,7 @@ const ClientDetail = ({ client, clients, setClients, tasks, setTasks, pages, set
                         <div style={{ fontSize: 14, fontWeight: 700, marginTop: 6, lineHeight: 1.3 }}>{p.title}</div>
                       </div>
                       <div style={{ display: "flex", gap: 2, flexShrink: 0, marginLeft: 8 }}>
+                        <button onClick={() => setPreviewPage(p)} title="Vista previa" style={{ background: "none", border: "none", cursor: "pointer", color: "#ccc", padding: 3 }}><Icon name="eye" size={13} /></button>
                         <button onClick={() => { setEditingPage(p); setPageForm({ title: p.title, content: p.content, type: p.type || "post", authorId: p.authorId || currentUser.id, date: p.date || new Date().toISOString().split("T")[0], notes: p.notes || [] }); setShowPageModal(true); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#ccc", padding: 3 }}><Icon name="edit" size={13} /></button>
                         <button onClick={() => { if (window.confirm(`¿Borrar "${p.title}"?`)) setPages(pages.filter(pg => pg.id !== p.id)); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#e0e0e0", padding: 3 }}><Icon name="trash" size={13} /></button>
                       </div>
@@ -1121,6 +1134,57 @@ const ClientDetail = ({ client, clients, setClients, tasks, setTasks, pages, set
       )}
       {(showNewTask || editingTask) && <TaskModal task={editingTask} clients={[liveClient]} users={users} tags={tags} setTags={setTags} currentUser={currentUser} onSave={saveTask} onClose={() => { setEditingTask(null); setShowNewTask(false); }} />}
       {(showMeetingModal || editingMeeting) && <MeetingModal meeting={editingMeeting} clients={[liveClient]} users={users} currentUser={currentUser} onSave={saveMeeting} onClose={() => { setEditingMeeting(null); setShowMeetingModal(false); }} />}
+      {previewPage && (() => {
+        const p      = previewPage;
+        const author = users.find(u => u.id === p.authorId);
+        const typeMap = { post: { label: "Post", color: "#5b6af0" }, reel: { label: "Reel", color: "#e86c4a" }, story: { label: "Story", color: "#f0a030" }, campana: { label: "Campaña", color: "#a855f7" }, otro: { label: "Otro", color: "#64748b" } };
+        const tp     = typeMap[p.type] || typeMap.otro;
+        const notes  = p.notes || [];
+        return (
+          <Modal title="" onClose={() => setPreviewPage(null)} wide>
+            {/* Header */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: tp.color, background: tp.color + "15", padding: "3px 10px", borderRadius: 20, textTransform: "uppercase", letterSpacing: "0.05em" }}>{tp.label}</span>
+                {p.date && <span style={{ fontSize: 12, color: "#bbb" }}>📅 {p.date}</span>}
+                {author && <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#aaa" }}><Avatar user={author} size={18} />{author.name}</span>}
+              </div>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, lineHeight: 1.3 }}>{p.title}</h2>
+              <div style={{ height: 3, background: tp.color, borderRadius: 2, marginTop: 12 }} />
+            </div>
+
+            {/* Content */}
+            {p.content && (
+              <div style={{ marginBottom: 20, padding: "16px 20px", background: "#f9f9f7", borderRadius: 10, fontSize: 14, lineHeight: 1.8, color: "#444", whiteSpace: "pre-wrap" }}>
+                {renderWithLinks(p.content)}
+              </div>
+            )}
+
+            {/* Action notes */}
+            {notes.length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>
+                  Action notes — {notes.filter(n=>n.checked).length}/{notes.length} completadas
+                </div>
+                {notes.map((n, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 12px", marginBottom: 4, background: n.checked ? "#f5fdf7" : "#fafafa", borderRadius: 8, border: "1px solid", borderColor: n.checked ? "#3db88a25" : "#f0f0f0" }}>
+                    <div style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${n.checked ? "#3db88a" : "#ddd"}`, background: n.checked ? "#3db88a" : "transparent", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10 }}>{n.checked ? "✓" : ""}</div>
+                    <span style={{ fontSize: 13, color: n.checked ? "#aaa" : "#555", textDecoration: n.checked ? "line-through" : "none", flex: 1, lineHeight: 1.5 }}>{renderWithLinks(n.text)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <Btn variant="secondary" onClick={() => setPreviewPage(null)}>Cerrar</Btn>
+              <Btn variant="accent" onClick={() => { setPreviewPage(null); setEditingPage(p); setPageForm({ title: p.title, content: p.content, type: p.type || "post", authorId: p.authorId || currentUser.id, date: p.date || new Date().toISOString().split("T")[0], notes: p.notes || [] }); setShowPageModal(true); }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Icon name="edit" size={13} /> Editar</span>
+              </Btn>
+            </div>
+          </Modal>
+        );
+      })()}
+
       {showPageModal && (
         <Modal title={editingPage ? "Editar contenido" : "Nuevo contenido"} onClose={() => { setShowPageModal(false); setEditingPage(null); }} wide>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
@@ -1132,7 +1196,16 @@ const ClientDetail = ({ client, clients, setClients, tasks, setTasks, pages, set
               {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </Select>
             <div style={{ gridColumn: "1/-1" }}><Input label="Fecha" type="date" value={pageForm.date || new Date().toISOString().split("T")[0]} onChange={e => setPageForm({ ...pageForm, date: e.target.value })} /></div>
-            <div style={{ gridColumn: "1/-1" }}><Textarea label="Descripción / Brief" rows={4} value={pageForm.content} onChange={e => setPageForm({ ...pageForm, content: e.target.value })} placeholder="Describí el contenido, el mensaje principal, referencias..." /></div>
+            <div style={{ gridColumn: "1/-1" }}>
+              <Textarea label="Descripción / Brief" rows={4} value={pageForm.content} onChange={e => setPageForm({ ...pageForm, content: e.target.value })} placeholder="Describí el contenido, el mensaje principal, referencias..." />
+              {pageForm.content && /(https?:\/\/[^\s]+)/.test(pageForm.content) && (
+                <div style={{ marginTop: -10, marginBottom: 16, fontSize: 12, color: "#aaa" }}>
+                  🔗 Links detectados: {pageForm.content.match(/(https?:\/\/[^\s]+)/g).map((url, i) =>
+                    <a key={i} href={url} target="_blank" rel="noreferrer" style={{ color: "#5b6af0", marginLeft: 6 }}>{url.length > 40 ? url.slice(0, 40) + "…" : url}</a>
+                  )}
+                </div>
+              )}
+            </div>
             <div style={{ gridColumn: "1/-1" }}>
               <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 8, letterSpacing: "0.04em", textTransform: "uppercase" }}>
                 Action notes {pageForm.notes?.length > 0 && <span style={{ color: "#bbb", fontWeight: 400 }}>({pageForm.notes.filter(n=>n.checked).length}/{pageForm.notes.length})</span>}
