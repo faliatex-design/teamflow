@@ -936,7 +936,8 @@ const ClientDetail = ({ client, clients, setClients, tasks, setTasks, pages, set
   const [showMeetingModal, setShowMeetingModal] = useState(false);
   const [editingMeeting, setEditingMeeting]     = useState(null);
   const [showEditClient, setShowEditClient]     = useState(false);
-  const [pageForm, setPageForm]       = useState({ title: "", content: "" });
+  const emptyPageForm = () => ({ title: "", content: "", type: "post", authorId: currentUser.id, date: new Date().toISOString().split("T")[0], notes: [] });
+  const [pageForm, setPageForm]       = useState(emptyPageForm());
   const [tagFilter, setTagFilter]     = useState("all");
   const [clientForm, setClientForm]   = useState(null);
 
@@ -976,9 +977,10 @@ const ClientDetail = ({ client, clients, setClients, tasks, setTasks, pages, set
   };
   const savePage = () => {
     if (!pageForm.title.trim()) return;
-    if (editingPage) setPages(pages.map(p => p.id === editingPage.id ? { ...p, ...pageForm } : p));
-    else setPages([...pages, { id: "p" + Date.now(), clientId: client.id, ...pageForm, createdAt: Date.now() }]);
-    setPageForm({ title: "", content: "" }); setEditingPage(null); setShowPageModal(false);
+    const data = { title: pageForm.title, content: pageForm.content, type: pageForm.type || "post", authorId: pageForm.authorId || currentUser.id, date: pageForm.date || new Date().toISOString().split("T")[0], notes: (pageForm.notes || []).filter(n => n.text.trim()) };
+    if (editingPage) setPages(pages.map(p => p.id === editingPage.id ? { ...p, ...data } : p));
+    else setPages([...pages, { id: "p" + Date.now(), clientId: client.id, ...data, createdAt: Date.now() }]);
+    setPageForm(emptyPageForm()); setEditingPage(null); setShowPageModal(false);
   };
 
   const tabList = [{ id: "tasks", label: "Tareas", count: cTasks.length }, { id: "meetings", label: "Reuniones", count: cMeetings.length }, { id: "pages", label: "Páginas", count: cPages.length }];
@@ -1052,22 +1054,55 @@ const ClientDetail = ({ client, clients, setClients, tasks, setTasks, pages, set
       {tab === "pages" && (
         <div>
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-            <Btn onClick={() => { setEditingPage(null); setPageForm({ title: "", content: "" }); setShowPageModal(true); }}><span style={{ display: "flex", alignItems: "center", gap: 6 }}><Icon name="plus" size={14} /> Nueva página</span></Btn>
+            <Btn onClick={() => { setEditingPage(null); setPageForm(emptyPageForm()); setShowPageModal(true); }}><span style={{ display: "flex", alignItems: "center", gap: 6 }}><Icon name="plus" size={14} /> Nueva página</span></Btn>
           </div>
           {cPages.length === 0 && <p style={{ color: "#aaa", fontSize: 14 }}>Sin páginas aún.</p>}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
-            {cPages.map(p => (
-              <div key={p.id} style={{ background: "#fff", borderRadius: 12, padding: 20, border: "1.5px solid #efefef" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>📄 {p.title}</div>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <button onClick={() => { setEditingPage(p); setPageForm({ title: p.title, content: p.content }); setShowPageModal(true); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#ccc", padding: 2 }}><Icon name="edit" size={13} /></button>
-                    <button onClick={() => setPages(pages.filter(pg => pg.id !== p.id))} style={{ background: "none", border: "none", cursor: "pointer", color: "#ccc", padding: 2 }}><Icon name="trash" size={13} /></button>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+            {[...cPages].sort((a,b) => (b.date||"").localeCompare(a.date||"")).map(p => {
+              const author   = users.find(u => u.id === p.authorId);
+              const typeMap  = { post: { label: "Post", color: "#5b6af0" }, reel: { label: "Reel", color: "#e86c4a" }, story: { label: "Story", color: "#f0a030" }, campana: { label: "Campaña", color: "#a855f7" }, otro: { label: "Otro", color: "#64748b" } };
+              const tp       = typeMap[p.type] || typeMap.otro;
+              const notes    = p.notes || [];
+              const checked  = notes.filter(n => n.checked).length;
+              return (
+                <div key={p.id} style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #efefef", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                  <div style={{ height: 4, background: tp.color }} />
+                  <div style={{ padding: "16px 18px", flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: tp.color, background: tp.color + "15", padding: "2px 8px", borderRadius: 20, textTransform: "uppercase", letterSpacing: "0.05em" }}>{tp.label}</span>
+                        <div style={{ fontSize: 14, fontWeight: 700, marginTop: 6, lineHeight: 1.3 }}>{p.title}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 2, flexShrink: 0, marginLeft: 8 }}>
+                        <button onClick={() => { setEditingPage(p); setPageForm({ title: p.title, content: p.content, type: p.type || "post", authorId: p.authorId || currentUser.id, date: p.date || new Date().toISOString().split("T")[0], notes: p.notes || [] }); setShowPageModal(true); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#ccc", padding: 3 }}><Icon name="edit" size={13} /></button>
+                        <button onClick={() => { if (window.confirm(`¿Borrar "${p.title}"?`)) setPages(pages.filter(pg => pg.id !== p.id)); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#e0e0e0", padding: 3 }}><Icon name="trash" size={13} /></button>
+                      </div>
+                    </div>
+                    {p.content && <p style={{ margin: "0 0 10px", fontSize: 12, color: "#777", lineHeight: 1.6, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{p.content}</p>}
+                    {notes.length > 0 && (
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "#bbb", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 }}>Notas {checked}/{notes.length}</div>
+                        {notes.map((n, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <button onClick={() => setPages(pages.map(pg => pg.id !== p.id ? pg : { ...pg, notes: pg.notes.map((nn, ii) => ii === i ? { ...nn, checked: !nn.checked } : nn) }))}
+                              style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${n.checked ? "#3db88a" : "#ddd"}`, background: n.checked ? "#3db88a" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9, cursor: "pointer", padding: 0 }}>
+                              {n.checked ? "✓" : ""}
+                            </button>
+                            <span style={{ fontSize: 12, color: n.checked ? "#bbb" : "#555", textDecoration: n.checked ? "line-through" : "none", flex: 1 }}>{n.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ padding: "10px 18px", borderTop: "1px solid #f5f5f5", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {author && <><Avatar user={author} size={18} /><span style={{ fontSize: 11, color: "#aaa" }}>{author.name}</span></>}
+                    </div>
+                    {p.date && <span style={{ fontSize: 11, color: "#bbb" }}>📅 {p.date}</span>}
                   </div>
                 </div>
-                <p style={{ margin: 0, fontSize: 12, color: "#aaa", lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{p.content || "Sin contenido..."}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1087,10 +1122,42 @@ const ClientDetail = ({ client, clients, setClients, tasks, setTasks, pages, set
       {(showNewTask || editingTask) && <TaskModal task={editingTask} clients={[liveClient]} users={users} tags={tags} setTags={setTags} currentUser={currentUser} onSave={saveTask} onClose={() => { setEditingTask(null); setShowNewTask(false); }} />}
       {(showMeetingModal || editingMeeting) && <MeetingModal meeting={editingMeeting} clients={[liveClient]} users={users} currentUser={currentUser} onSave={saveMeeting} onClose={() => { setEditingMeeting(null); setShowMeetingModal(false); }} />}
       {showPageModal && (
-        <Modal title={editingPage ? "Editar página" : "Nueva página"} onClose={() => setShowPageModal(false)}>
-          <Input label="Título" value={pageForm.title} onChange={e => setPageForm({ ...pageForm, title: e.target.value })} />
-          <Textarea label="Contenido" rows={6} value={pageForm.content} onChange={e => setPageForm({ ...pageForm, content: e.target.value })} placeholder="Escribí el contenido..." />
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}><Btn variant="secondary" onClick={() => setShowPageModal(false)}>Cancelar</Btn><Btn onClick={savePage}>{editingPage ? "Guardar" : "Crear"}</Btn></div>
+        <Modal title={editingPage ? "Editar contenido" : "Nuevo contenido"} onClose={() => { setShowPageModal(false); setEditingPage(null); }} wide>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+            <div style={{ gridColumn: "1/-1" }}><Input label="Título" placeholder="Ej: Post lanzamiento nuevo producto" value={pageForm.title} onChange={e => setPageForm({ ...pageForm, title: e.target.value })} /></div>
+            <Select label="Tipo" value={pageForm.type || "post"} onChange={e => setPageForm({ ...pageForm, type: e.target.value })}>
+              <option value="post">Post</option><option value="reel">Reel</option><option value="story">Story</option><option value="campana">Campaña</option><option value="otro">Otro</option>
+            </Select>
+            <Select label="Creado por" value={pageForm.authorId || currentUser.id} onChange={e => setPageForm({ ...pageForm, authorId: e.target.value })}>
+              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </Select>
+            <div style={{ gridColumn: "1/-1" }}><Input label="Fecha" type="date" value={pageForm.date || new Date().toISOString().split("T")[0]} onChange={e => setPageForm({ ...pageForm, date: e.target.value })} /></div>
+            <div style={{ gridColumn: "1/-1" }}><Textarea label="Descripción / Brief" rows={4} value={pageForm.content} onChange={e => setPageForm({ ...pageForm, content: e.target.value })} placeholder="Describí el contenido, el mensaje principal, referencias..." /></div>
+            <div style={{ gridColumn: "1/-1" }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 8, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                Action notes {pageForm.notes?.length > 0 && <span style={{ color: "#bbb", fontWeight: 400 }}>({pageForm.notes.filter(n=>n.checked).length}/{pageForm.notes.length})</span>}
+              </label>
+              {(pageForm.notes || []).map((n, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <button onClick={() => setPageForm(f => ({ ...f, notes: f.notes.map((nn, ii) => ii === i ? { ...nn, checked: !nn.checked } : nn) }))}
+                    style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${n.checked ? "#3db88a" : "#ccc"}`, background: n.checked ? "#3db88a" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, cursor: "pointer", padding: 0 }}>
+                    {n.checked ? "✓" : ""}
+                  </button>
+                  <input value={n.text} onChange={e => setPageForm(f => ({ ...f, notes: f.notes.map((nn, ii) => ii === i ? { ...nn, text: e.target.value } : nn) }))}
+                    style={{ flex: 1, border: "1.5px solid #e8e8e8", borderRadius: 6, padding: "6px 10px", fontSize: 13, fontFamily: "inherit", outline: "none", background: "#fafafa", textDecoration: n.checked ? "line-through" : "none", color: n.checked ? "#aaa" : "#1a1a1a" }} />
+                  <button onClick={() => setPageForm(f => ({ ...f, notes: f.notes.filter((_, ii) => ii !== i) }))} style={{ background: "none", border: "none", cursor: "pointer", color: "#ddd", padding: 2 }}><Icon name="x" size={13} /></button>
+                </div>
+              ))}
+              <button onClick={() => setPageForm(f => ({ ...f, notes: [...(f.notes||[]), { text: "", checked: false }] }))}
+                style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "1.5px dashed #ddd", borderRadius: 8, padding: "6px 14px", fontSize: 12, color: "#aaa", cursor: "pointer", fontFamily: "inherit", marginTop: 4 }}>
+                <Icon name="plus" size={12} /> Agregar nota
+              </button>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+            <Btn variant="secondary" onClick={() => { setShowPageModal(false); setEditingPage(null); }}>Cancelar</Btn>
+            <Btn onClick={savePage} disabled={!pageForm.title?.trim()}>{editingPage ? "Guardar" : "Crear contenido"}</Btn>
+          </div>
         </Modal>
       )}
     </div>
